@@ -1,0 +1,30 @@
+{
+    "Bitcoin": [
+        {
+            "PurchasedDate":  "2021-10-10",
+            "PurchasedPrice": 400.0,
+            "CryptoAmount":   0.07736
+        }
+    ],
+    "Ethereum": [
+        {
+            "PurchasedDate":  "2021-05-10",
+            "PurchasedPrice": 300.0,
+            "CryptoAmount":   0.1421
+        }
+    ],
+    "Cardano": [
+        {
+            "PurchasedDate":  "2021-08-07",
+            "PurchasedPrice": 1000.0,
+            "CryptoAmount":   783.5244
+        }
+    ],
+    "Polkadot": [
+        {
+            "PurchasedDate":  "2021-05-10",
+            "PurchasedPrice": 1000.0,
+            "CryptoAmount":   98.9121
+        }
+    ]
+}

@@ -9,25 +9,30 @@ The project uses interfaces as dependency injection and has its unit tests.
 
 **IMPORTANT:** it only works by getting the current price from the following crytos: Bitcoin, Ethereum, Cardano, Polkadot.
 
+## env variables
 
-run on development
+Take a look at `.env.example`
+
+## Local development
+
+### run on development
 
 ```sh
-go run main.go
+ENV_FILE=.env go run main.go
 ```
 
-run tests:
+### run tests
 
 ```sh
 go test
 ```
 
-compile and run build:
+### compile and run build
 
 ```sh
 go build -o mybinary
 ./mybinary
 ```
 
-The `scripts/write_true.sh` is designed to reset to true the content inside input files so it only sends 1 xmpp message per day in case your gains hit the boundary.
-You can execute `scripts/write_true.sh` inside a cronjob to reset it to true once per day as an example.
+The `scripts/init_input.sh` is designed to reset to true the content inside input files so it only sends 1 xmpp message per day in case your gains hit the boundary.
+You can execute `scripts/init_input.sh` inside a cronjob to reset it to true once per day as an example.

@@ -4,14 +4,14 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"io/ioutil"
-	"net/http"
+	"log"
 	"os"
 	"strconv"
 	"strings"
 
-	"crypto-alerts/pkg/services"
-	xmpp "crypto-alerts/pkg/xmpp"
+	"github.com/sovereignrealm/crypto-xmpp-alert/internal/services/price"
+	"github.com/sovereignrealm/crypto-xmpp-alert/internal/services/xmpp"
+	"github.com/sovereignrealm/crypto-xmpp-alert/kit/config"
 )
 
 type CryptoTransaction struct {
@@ -20,8 +20,8 @@ type CryptoTransaction struct {
 	CryptoAmount   float64
 }
 
-type CryptoAsset struct {
-	Name     string
+type CryptoAssetSS struct {
+	Name     price.CrytpoAsset
 	Boundary float64
 }
 
@@ -36,52 +36,62 @@ type FileWriter interface {
 type DefaultFileReaderWriter struct{}
 
 func (r *DefaultFileReaderWriter) ReadFile(filename string) ([]byte, error) {
-	return ioutil.ReadFile(filename)
+	return os.ReadFile(filename)
 }
 
 func (r *DefaultFileReaderWriter) WriteFile(filename string, data []byte, perm fs.FileMode) error {
-	return ioutil.WriteFile(filename, data, perm)
+	return os.WriteFile(filename, data, perm)
 }
 
 func main() {
-	assets := []CryptoAsset{
-		{Name: "Bitcoin", Boundary: 200.0},
-		{Name: "Ethereum", Boundary: 100.0},
-		{Name: "Cardano", Boundary: 100.0},
-		{Name: "Polkadot", Boundary: 50.0},
+	cfg := config.NewConfig(os.Getenv("ENV_FILE"))
+	ps := price.NewPriceService()
+	xs := xmpp.NewXmppService(xmpp.XmppServiceOptions{
+		Username:     cfg.XmppUsername,
+		Password:     cfg.XmppPassword,
+		Server:       cfg.XmppServer,
+		RecipientJID: cfg.XmppRecipientJid,
+	})
+	assets := []CryptoAssetSS{
+		{Name: price.CrytpoAssetBitcoin, Boundary: 200.0},
+		{Name: price.CrytpoAssetEthereum, Boundary: 100.0},
+		{Name: price.CrytpoAssetCardano, Boundary: 100.0},
+		{Name: price.CrytpoAssetPolkadot, Boundary: 50.0},
 	}
 
-	jsonData, err := ioutil.ReadFile("./json/data.json")
+	jsonData, err := os.ReadFile("./json/data.json")
 	if err != nil {
-		fmt.Println("Error reading JSON file:", err)
-		os.Exit(1)
+		panic(fmt.Errorf("error reading JSON file: %w", err))
 	}
 
 	var transactions map[string][]CryptoTransaction
 	if err := json.Unmarshal(jsonData, &transactions); err != nil {
-		fmt.Println("Error unmarshalling JSON:", err)
-		os.Exit(1)
+		panic(fmt.Errorf("error unmarshalling JSON: %w", err))
 	}
 
 	for _, asset := range assets {
-		transactions, ok := transactions[asset.Name]
+		transactions, ok := transactions[string(asset.Name)]
 		if !ok {
 			continue
 		}
 		totalAmountInvested, totalCryptoAsset := calculateTotalValues(transactions)
-		client := http.Client{}
-		currentPrice, err := services.GetCurrentPrice(&client, asset.Name)
+		currentPrice, err := ps.GetCurrentPrice(asset.Name)
 		if err != nil {
-			// fmt.Printf("Error fetching current %s price: %v\n", asset.Name, err)
-			sendXmppErrorGettingPrice("Error fetching current " + asset.Name + " price")
+			if err := xs.SendMessage(fmt.Sprintf("Error fetching current %s price", asset.Name)); err != nil {
+				// TODO: Should panic???
+				log.Println("error while sending xmpp message:", err)
+			}
 			continue
 		}
 		if currentPrice == 0 {
-			sendXmppErrorGettingPrice("Error fetching current " + asset.Name + " price")
+			if err := xs.SendMessage(fmt.Sprintf("Error fetching current %s price", asset.Name)); err != nil {
+				// TODO: Should panic???
+				log.Println("error while sending xmpp message:", err)
+			}
 			continue
 		}
 		fmt.Printf("-------- %s  --------\n", asset.Name)
-		printSummary(asset.Name, totalAmountInvested, totalCryptoAsset, currentPrice, asset.Boundary)
+		printSummary(asset.Name, totalAmountInvested, totalCryptoAsset, currentPrice)
 		var fileReader FileReader = &DefaultFileReaderWriter{}
 		readData, err := readFile(fileReader, asset.Name)
 		if err != nil {
@@ -90,14 +100,25 @@ func main() {
 		}
 		if isFirstTime(readData) {
 			moneyNow := totalCryptoAsset * currentPrice
-			sendXmppGainMsg(asset.Name, asset.Boundary, calculatePercentageChange(totalAmountInvested, moneyNow))
+			totalGained := calculatePercentageChange(totalAmountInvested, moneyNow)
+			if totalGained >= asset.Boundary {
+				strVal := strconv.FormatFloat(totalGained, 'f', 2, 64)
+				if err := xs.SendMessage(fmt.Sprintf("You have gained in %s: %s%%", asset.Name, strVal)); err != nil {
+					// TODO: Should panic???
+					log.Println("error while sending xmpp message:", err)
+				}
+			}
 			var fileWriter FileWriter = &DefaultFileReaderWriter{}
-			writeFile(fileWriter, asset.Name)
+			if err := writeFile(fileWriter, string(asset.Name)); err != nil {
+				// TODO: Should panic???
+				log.Println("error writing to file:", err)
+			}
 		}
 		fmt.Printf("-------- END %s  --------\n", asset.Name)
 	}
 }
 
+// TODO: Refactor all thes functions move to services package
 func calculateTotalValues(transactions []CryptoTransaction) (float64, float64) {
 	totalAmountInvested := 0.0
 	totalCryptoAsset := 0.0
@@ -110,7 +131,7 @@ func calculateTotalValues(transactions []CryptoTransaction) (float64, float64) {
 	return totalAmountInvested, totalCryptoAsset
 }
 
-func printSummary(cryptoAsset string, totalAmountInvested, totalCryptoAsset, currentPrice, boundary float64) {
+func printSummary(cryptoAsset price.CrytpoAsset, totalAmountInvested, totalCryptoAsset, currentPrice float64) {
 	fmt.Printf("totalAmountInvested: %.2f\n", totalAmountInvested)
 	fmt.Printf("total %s: %.2f\n", cryptoAsset, totalCryptoAsset)
 
@@ -122,17 +143,11 @@ func printSummary(cryptoAsset string, totalAmountInvested, totalCryptoAsset, cur
 }
 
 func isFirstTime(data []byte) bool {
-	strValue := strings.TrimSpace(string(data))
-	boolValue, err := strconv.ParseBool(strValue)
-	if err != nil {
-		fmt.Println("Error parsing into bool: ", err)
-		return true
-	}
-	return boolValue
+	return strings.TrimSpace(string(data)) == ""
 }
 
-func readFile(fileRead FileReader, cryptoAsset string) ([]byte, error) {
-	filePath := "./input/" + strings.ToLower(cryptoAsset) + ".txt"
+func readFile(fileRead FileReader, cryptoAsset price.CrytpoAsset) ([]byte, error) {
+	filePath := "./input/" + strings.ToLower(string(cryptoAsset)) + ".txt"
 	data, err := fileRead.ReadFile(filePath)
 	if err != nil {
 		fmt.Println("Error writing to file:", err)
@@ -141,24 +156,9 @@ func readFile(fileRead FileReader, cryptoAsset string) ([]byte, error) {
 	return data, nil
 }
 
-func writeFile(fileWriter FileWriter, cryptoAsset string) {
+func writeFile(fileWriter FileWriter, cryptoAsset string) error {
 	filePath := "./input/" + strings.ToLower(cryptoAsset) + ".txt"
-	err := fileWriter.WriteFile(filePath, []byte("false"), 0644)
-	if err != nil {
-		fmt.Println("Error writing to file:", err)
-		return
-	}
-}
-
-func sendXmppErrorGettingPrice(message string) {
-	xmpp.SendXMPP(message)
-}
-
-func sendXmppGainMsg(currency string, boundary float64, totalGained float64) {
-	if totalGained >= boundary {
-		strVal := strconv.FormatFloat(totalGained, 'f', 2, 64)
-		xmpp.SendXMPP("You have gained in " + currency + ": " + strVal + "%")
-	}
+	return fileWriter.WriteFile(filePath, []byte("false"), 0644)
 }
 
 func calculatePercentageChange(initialValue, finalValue float64) float64 {

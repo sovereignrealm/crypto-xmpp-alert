@@ -1,6 +1,6 @@
 #!/bin/bash
 
-input_folder="../input"
+input_folder="./input"
 
 # Check if the input folder exists
 if [ ! -d "$input_folder" ]; then
@@ -13,6 +13,6 @@ for file in "$input_folder"/*; do
     # Check if it is a regular file
     if [ -f "$file" ]; then
         # Write "true" to the file
-        echo "true" > "$file"
+        echo "" > "$file"
     fi
 done

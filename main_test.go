@@ -55,17 +55,14 @@ func TestCalculatePercentageChange(t *testing.T) {
 }
 
 func TestIsFirstTime(t *testing.T) {
-	data := []byte("false")
+	data := []byte("a")
 	result := isFirstTime(data)
 	assert.False(t, result)
 
-	data = []byte("true")
+	data = []byte("")
 	result = isFirstTime(data)
 	assert.True(t, result)
 
-	data = []byte("invalid")
-	result = isFirstTime(data)
-	assert.True(t, result) // Default to true for invalid data
 }
 
 func TestReadFile(t *testing.T) {
